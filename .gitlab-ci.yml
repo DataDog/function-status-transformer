@@ -4,7 +4,6 @@ default:
 
 variables:
   BUILD_STABLE_REGISTRY: registry.ddbuild.io
-  DISTROLESS_ROOT_FIPS_BASE_IMAGE: registry.ddbuild.io/images/base/gbi-distroless-nossl-root-fips:release
 
 # Force git to remove any reference to the local disk copy of the repository
 before_script:
@@ -13,7 +12,8 @@ before_script:
 stages:
   - build
 
-# Build and push the function image tagged with pipeline ID + commit SHA
+# Build and push the function image tagged with pipeline ID + commit SHA.
+# Runs automatically on every branch push.
 build-image:
   stage: build
   rules:
@@ -33,28 +33,32 @@ build-image:
       echo "Building ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
       cat > Dockerfile.ci << 'EOF'
-      FROM golang:1.24-alpine AS builder
-      WORKDIR /fn
-      ENV CGO_ENABLED=0
-      ENV GOFIPS140=v1.0.0
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      LABEL target=prod
+      ARG TARGETOS
+      ARG TARGETARCH
+      ARG TARGETPLATFORM
+      WORKDIR /workspace
       COPY go.mod go.sum ./
       RUN go mod download
       COPY . .
-      RUN GOOS=linux go build -o /function .
-      FROM registry.ddbuild.io/images/base/gbi-distroless-nossl-root-fips:release
-      COPY --from=builder /function /function
-      EXPOSE 9443
-      USER 65532
-      ENTRYPOINT ["/function"]
+      ENV CGO_ENABLED=1
+      ENV GOEXPERIMENT=boringcrypto
+      RUN go build -tags fips -o /workspace/function .
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
+      LABEL target=prod
+      LABEL is_fips=true
+      WORKDIR /home/dog
+      COPY --from=builder /workspace/function /home/dog/function
+      COPY package/crossplane.yaml /package.yaml
+      USER dog
+      ENTRYPOINT ["/home/dog/function"]
       EOF
 
       METADATA_FILE=$(mktemp)
       docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.ci \
-        --label is_fips=true \
-        --label version="${IMAGE_TAG}" \
-        --label target=prod \
         --label CI_PIPELINE_ID="${CI_PIPELINE_ID}" \
         --label CI_JOB_ID="${CI_JOB_ID}" \
         --tag "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" \
@@ -95,28 +99,32 @@ build-release:
       echo "Building release ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
       cat > Dockerfile.ci << 'EOF'
-      FROM golang:1.24-alpine AS builder
-      WORKDIR /fn
-      ENV CGO_ENABLED=0
-      ENV GOFIPS140=v1.0.0
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      LABEL target=prod
+      ARG TARGETOS
+      ARG TARGETARCH
+      ARG TARGETPLATFORM
+      WORKDIR /workspace
       COPY go.mod go.sum ./
       RUN go mod download
       COPY . .
-      RUN GOOS=linux go build -o /function .
-      FROM registry.ddbuild.io/images/base/gbi-distroless-nossl-root-fips:release
-      COPY --from=builder /function /function
-      EXPOSE 9443
-      USER 65532
-      ENTRYPOINT ["/function"]
+      ENV CGO_ENABLED=1
+      ENV GOEXPERIMENT=boringcrypto
+      RUN go build -tags fips -o /workspace/function .
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
+      LABEL target=prod
+      LABEL is_fips=true
+      WORKDIR /home/dog
+      COPY --from=builder /workspace/function /home/dog/function
+      COPY package/crossplane.yaml /package.yaml
+      USER dog
+      ENTRYPOINT ["/home/dog/function"]
       EOF
 
       METADATA_FILE=$(mktemp)
       docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.ci \
-        --label is_fips=true \
-        --label version="${IMAGE_TAG}" \
-        --label target=prod \
         --label CI_PIPELINE_ID="${CI_PIPELINE_ID}" \
         --label CI_JOB_ID="${CI_JOB_ID}" \
         --annotation target=staging \
