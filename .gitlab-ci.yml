@@ -17,8 +17,7 @@ stages:
 build-image:
   stage: build
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-    - when: manual
+    - if: '$CI_COMMIT_BRANCH'
   id_tokens:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
