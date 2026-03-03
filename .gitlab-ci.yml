@@ -62,8 +62,7 @@ build-image:
         --label CI_PIPELINE_ID="${CI_PIPELINE_ID}" \
         --label CI_JOB_ID="${CI_JOB_ID}" \
         --tag "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" \
-        --metadata-file "${METADATA_FILE}" \
-        --output type=image,push=true,compression=zstd,force-compression=true,oci-mediatypes=true \
+        --metadata-file "${METADATA_FILE}" --push \
         .
 
       ddsign sign "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" --docker-metadata-file "${METADATA_FILE}"
@@ -129,8 +128,7 @@ build-release:
         --label CI_JOB_ID="${CI_JOB_ID}" \
         --annotation target=staging \
         --tag "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" \
-        --metadata-file "${METADATA_FILE}" \
-        --output type=image,push=true,compression=zstd,force-compression=true,oci-mediatypes=true \
+        --metadata-file "${METADATA_FILE}" --push \
         .
 
       ddsign sign "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" --docker-metadata-file "${METADATA_FILE}"
