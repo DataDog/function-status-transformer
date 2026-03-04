@@ -1,0 +1,139 @@
+default:
+  tags: ["arch:amd64"]
+  image: registry.ddbuild.io/docker:27.3.1
+
+variables:
+  BUILD_STABLE_REGISTRY: registry.ddbuild.io
+
+# Force git to remove any reference to the local disk copy of the repository
+before_script:
+  - git repack -a -d && rm -f .git/objects/info/alternates
+
+stages:
+  - build
+
+# Build and push the function image tagged with pipeline ID + commit SHA.
+# Runs automatically on every branch push.
+build-image:
+  stage: build
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
+  script:
+    - |
+      set -euxo pipefail
+
+      REGISTRY="${BUILD_STABLE_REGISTRY}"
+      IMAGE_NAME="crossplane-compute-cloud/function-status-transformer"
+      IMAGE_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}"
+      PLATFORMS="linux/amd64,linux/arm64"
+
+      echo "Building ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+      cat > Dockerfile.ci << 'EOF'
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      LABEL target=prod
+      ARG TARGETOS
+      ARG TARGETARCH
+      ARG TARGETPLATFORM
+      WORKDIR /workspace
+      COPY go.mod go.sum ./
+      RUN go mod download
+      COPY . .
+      ENV CGO_ENABLED=1
+      ENV GOEXPERIMENT=boringcrypto
+      RUN go build -tags fips -o /workspace/function .
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
+      LABEL target=prod
+      LABEL is_fips=true
+      WORKDIR /home/dog
+      COPY --from=builder /workspace/function /home/dog/function
+      COPY package/crossplane.yaml /package.yaml
+      USER dog
+      ENTRYPOINT ["/home/dog/function"]
+      EOF
+
+      METADATA_FILE=$(mktemp)
+      docker buildx build \
+        --platform "${PLATFORMS}" \
+        --file Dockerfile.ci \
+        --label CI_PIPELINE_ID="${CI_PIPELINE_ID}" \
+        --label CI_JOB_ID="${CI_JOB_ID}" \
+        --tag "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" \
+        --metadata-file "${METADATA_FILE}" \
+        --output type=image,push=true,compression=gzip,force-compression=true \
+        .
+
+      ddsign sign "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" --docker-metadata-file "${METADATA_FILE}"
+      SHA=$(jq -r '.["containerimage.digest"]' < "${METADATA_FILE}")
+      echo "Built and pushed ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} (digest: ${SHA})"
+      rm -f "${METADATA_FILE}" Dockerfile.ci
+
+# Build and push the function image with a semantic version tag.
+# Requires VERSION variable to be set (e.g. 1.2.3) when manually triggering this job.
+build-release:
+  stage: build
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+      when: manual
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
+  script:
+    - |
+      set -euxo pipefail
+
+      if [ -z "${VERSION:-}" ]; then
+        echo "ERROR: VERSION variable must be set when triggering this job"
+        echo "Example: Set VERSION=1.2.3 in the job variables"
+        exit 1
+      fi
+
+      REGISTRY="${BUILD_STABLE_REGISTRY}"
+      IMAGE_NAME="crossplane-compute-cloud/function-status-transformer"
+      IMAGE_TAG="${VERSION}"
+      PLATFORMS="linux/amd64,linux/arm64"
+
+      echo "Building release ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+      cat > Dockerfile.ci << 'EOF'
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      LABEL target=prod
+      ARG TARGETOS
+      ARG TARGETARCH
+      ARG TARGETPLATFORM
+      WORKDIR /workspace
+      COPY go.mod go.sum ./
+      RUN go mod download
+      COPY . .
+      ENV CGO_ENABLED=1
+      ENV GOEXPERIMENT=boringcrypto
+      RUN go build -tags fips -o /workspace/function .
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
+      LABEL target=prod
+      LABEL is_fips=true
+      WORKDIR /home/dog
+      COPY --from=builder /workspace/function /home/dog/function
+      COPY package/crossplane.yaml /package.yaml
+      USER dog
+      ENTRYPOINT ["/home/dog/function"]
+      EOF
+
+      METADATA_FILE=$(mktemp)
+      docker buildx build \
+        --platform "${PLATFORMS}" \
+        --file Dockerfile.ci \
+        --label CI_PIPELINE_ID="${CI_PIPELINE_ID}" \
+        --label CI_JOB_ID="${CI_JOB_ID}" \
+        --annotation target=staging \
+        --tag "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" \
+        --metadata-file "${METADATA_FILE}" \
+        --output type=image,push=true,compression=gzip,force-compression=true \
+        .
+
+      ddsign sign "${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" --docker-metadata-file "${METADATA_FILE}"
+      SHA=$(jq -r '.["containerimage.digest"]' < "${METADATA_FILE}")
+      echo "Built and pushed ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} (digest: ${SHA})"
+      rm -f "${METADATA_FILE}" Dockerfile.ci
