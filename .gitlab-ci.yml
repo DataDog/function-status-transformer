@@ -76,7 +76,7 @@ build-image:
 build-release:
   stage: build
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH'
       when: manual
   id_tokens:
     DDSIGN_ID_TOKEN:
