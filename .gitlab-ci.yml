@@ -33,7 +33,7 @@ build-image:
       echo "Building ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
       cat > Dockerfile.ci << 'EOF'
-      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      FROM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
       LABEL target=prod
       ARG TARGETOS
       ARG TARGETARCH
@@ -45,7 +45,7 @@ build-image:
       ENV CGO_ENABLED=1
       ENV GOEXPERIMENT=boringcrypto
       RUN go build -tags fips -o /workspace/function .
-      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
+      FROM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
       LABEL target=prod
       LABEL is_fips=true
       WORKDIR /home/dog
@@ -99,7 +99,7 @@ build-release:
       echo "Building release ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
       cat > Dockerfile.ci << 'EOF'
-      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      FROM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
       LABEL target=prod
       ARG TARGETOS
       ARG TARGETARCH
@@ -111,7 +111,7 @@ build-release:
       ENV CGO_ENABLED=1
       ENV GOEXPERIMENT=boringcrypto
       RUN go build -tags fips -o /workspace/function .
-      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
+      FROM registry.ddbuild.io/images/base/gbi-ubuntu_2404-fips:release
       LABEL target=prod
       LABEL is_fips=true
       WORKDIR /home/dog
