@@ -22,31 +22,54 @@ func mtlsCertificates(dir, caCertFile, certFile, keyFile string) function.ServeO
 			return nil
 		}
 
-		crt, err := tls.LoadX509KeyPair(
-			filepath.Join(dir, certFile),
-			filepath.Join(dir, keyFile),
-		)
+		config, err := rotatingMTLSConfig(dir, caCertFile, certFile, keyFile)
 		if err != nil {
-			return errors.Wrap(err, "cannot load X509 keypair")
+			return err
 		}
 
-		ca, err := os.ReadFile(filepath.Clean(filepath.Join(dir, caCertFile)))
-		if err != nil {
-			return errors.Wrap(err, "cannot read CA certificate")
-		}
-
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(ca) {
-			return errors.New("invalid CA certificate")
-		}
-
-		o.Credentials = credentials.NewTLS(&tls.Config{
-			MinVersion:   tls.VersionTLS12,
-			Certificates: []tls.Certificate{crt},
-			ClientCAs:    pool,
-			ClientAuth:   tls.RequireAndVerifyClientCert,
-		})
-
+		o.Credentials = credentials.NewTLS(config)
 		return nil
 	}
+}
+
+func rotatingMTLSConfig(dir, caCertFile, certFile, keyFile string) (*tls.Config, error) {
+	// Validate the files at startup rather than waiting for the first connection.
+	config, err := loadMTLSConfig(dir, caCertFile, certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reload all TLS material for each new connection to pick up rotated files
+	// without restarting the function.
+	config.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+		return loadMTLSConfig(dir, caCertFile, certFile, keyFile)
+	}
+	return config, nil
+}
+
+func loadMTLSConfig(dir, caCertFile, certFile, keyFile string) (*tls.Config, error) {
+	crt, err := tls.LoadX509KeyPair(
+		filepath.Join(dir, certFile),
+		filepath.Join(dir, keyFile),
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot load X509 keypair")
+	}
+
+	ca, err := os.ReadFile(filepath.Clean(filepath.Join(dir, caCertFile)))
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot read CA certificate")
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(ca) {
+		return nil, errors.New("invalid CA certificate")
+	}
+
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{crt},
+		ClientCAs:    pool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+	}, nil
 }
