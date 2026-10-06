@@ -7,9 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/crossplane/function-sdk-go"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/crossplane/function-sdk-go"
 )
 
 // mtlsCertificates returns a ServeOption that configures mTLS using certificates
