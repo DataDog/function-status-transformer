@@ -33,7 +33,7 @@ build-image:
       echo "Building ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
       cat > Dockerfile.ci << 'EOF'
-      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/library/golang:1.26.10 AS builder
       LABEL target=prod
       ARG TARGETOS
       ARG TARGETARCH
@@ -99,7 +99,7 @@ build-release:
       echo "Building release ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 
       cat > Dockerfile.ci << 'EOF'
-      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/golang:1.25.6 AS builder
+      FROM --platform=$TARGETPLATFORM registry.ddbuild.io/images/mirror/library/golang:1.26.10 AS builder
       LABEL target=prod
       ARG TARGETOS
       ARG TARGETARCH
